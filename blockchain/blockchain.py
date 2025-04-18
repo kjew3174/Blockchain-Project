@@ -1,29 +1,43 @@
-from .block import Block
+from typing import Any
+from blockchain.block import Block
 import time
 
+
 class Blockchain:
-    def __init__(self):
-        self.chain = [self.create_genesis_block()]
-        self.difficulty = 4
+    def __init__(self) -> None:
 
-    def create_genesis_block(self):
-        return Block(0, time.time(), "Genesis Block", "0")
+        self.chain: list[Block] = []
+        self.pending_transactions: list[dict[str, Any]] = []
+        self.create_genesis_block()
 
-    def get_latest_block(self):
+    def create_genesis_block(self) -> None: # 최초 블록 생성
+
+        genesis_block = Block(0, "0", time.time(), [])
+        self.chain.append(genesis_block)
+
+    def get_latest_block(self) -> Block: # 최신 블록 반환
+
         return self.chain[-1]
 
-    def add_block(self, new_block):
-        new_block.previous_hash = self.get_latest_block().hash
-        new_block.mine_block(self.difficulty)
-        self.chain.append(new_block)
+    def create_new_block(self) -> Block: # 새 블록 생성
 
-    def is_chain_valid(self):
-        for i in range(1, len(self.chain)):
-            current_block = self.chain[i]
-            previous_block = self.chain[i - 1]
+        latest_block = self.get_latest_block()
+        new_block = Block(
+            index=latest_block.index + 1,
+            previous_hash=latest_block.hash,
+            timestamp=time.time(),
+            transactions=self.pending_transactions
+        )
+        self.pending_transactions = []  # 새로운 블록에 포함된 트랜잭션은 초기화
+        return new_block
 
-            if current_block.hash != current_block.calculate_hash():
-                return False
-            if current_block.previous_hash != previous_block.hash:
-                return False
-        return True
+    def add_block(self, block: Block) -> None: # 블록 추가
+
+        self.chain.append(block)
+
+    def replace_chain(
+            self,
+            new_chain: list[dict[str, Any]]
+        ) -> None: # 새 체인으로 교체
+
+        self.chain = [Block(**block_data) for block_data in new_chain]

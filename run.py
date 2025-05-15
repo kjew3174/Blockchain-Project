@@ -1,6 +1,6 @@
 import time
 import json
-from .block import Block
+from blockchain.block import Block
 from storage.erasure_code import ErasureCode
 from storage.storage import Storage
 import socket

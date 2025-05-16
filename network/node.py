@@ -4,10 +4,10 @@ import socket
 import json
 import requests
 from flask import Flask, request, jsonify, Response
-from ..blockchain.blockchain import Blockchain
-from ..blockchain.transaction import Transaction
-from ..storage.storage import Storage
-from ..storage.erasure_code import ErasureCode
+from blockchain.blockchain import Blockchain
+from blockchain.transaction import Transaction
+from storage.storage import Storage
+from storage.erasure_code import ErasureCode
 
 app = Flask(__name__)
 

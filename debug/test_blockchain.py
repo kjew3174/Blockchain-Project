@@ -1,5 +1,4 @@
 import unittest
-from blockchain.block import Block
 from blockchain.blockchain import Blockchain
 
 class TestBlockchain(unittest.TestCase):
@@ -14,7 +13,7 @@ class TestBlockchain(unittest.TestCase):
     def test_chain_validity(self):
         new_block = self.blockchain.create_new_block()
         self.blockchain.add_block(new_block)
-        self.assertTrue(self.blockchain.is_valid_chain())
+        self.assertTrue(self.blockchain.is_chain_valid())
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,4 @@
 import unittest
-from blockchain.block import Block
 from blockchain.blockchain import Blockchain
 
 class TestBlockchain(unittest.TestCase):

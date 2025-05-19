@@ -1,14 +1,11 @@
-import os
-import threading
-import time
-import socket
+import os, time
 import json
-import requests
+import threading
+import socket, requests
 from flask import Flask, request, jsonify, Response
-from blockchain.blockchain import Blockchain
-from blockchain.transaction import Transaction
-from storage.storage import Storage
-from storage.erasure_code import ErasureCode
+
+from blockchain import Blockchain, Transaction
+from storage import Storage, ErasureCode
 
 app = Flask(__name__)
 

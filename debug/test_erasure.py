@@ -1,5 +1,5 @@
 import unittest
-from storage.erasure_code import ErasureCode
+from storage import ErasureCode
 
 class TestErasureCode(unittest.TestCase):
     def setUp(self):

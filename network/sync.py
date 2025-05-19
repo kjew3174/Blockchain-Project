@@ -1,7 +1,7 @@
 import requests
-from blockchain.blockchain import Blockchain
-from storage.storage import Storage
-from storage.erasure_code import ErasureCode
+
+from blockchain import Blockchain
+from storage import Storage, ErasureCode
 
 class Sync:
     def __init__(self, blockchain: Blockchain, storage: Storage, erasure_code: ErasureCode) -> None:

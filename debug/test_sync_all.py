@@ -1,8 +1,6 @@
-import os
-import sys
+import os, sys, time
 import unittest
 import subprocess
-import time
 import requests
 
 # 프로젝트 루트를 PYTHONPATH에 추가

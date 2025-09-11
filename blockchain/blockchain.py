@@ -1,6 +1,6 @@
 import time
 import json
-from block import Block
+from blockchain.block import Block
 from storage.erasure_code import ErasureCode
 from storage.storage import Storage
 import socket
@@ -53,12 +53,12 @@ class Blockchain:
         self.chain.append(block)
         self.store_block(block)
 
-    def store_block(self, block: Block) -> None:
+    def store_block(self, block: Block, k: int | None = None, n: int | None = None) -> None:
         """
         블록을 JSON으로 직렬화한 뒤 소거 코드로 인코딩하여 저장소에 분산 저장
         """
         data_bytes = json.dumps(block.to_dict()).encode()
-        encoded = self.er.encode(data_bytes)
+        encoded = bytes(self.er.encode(data_bytes, k, n))
         # 소거 코드 결과를 단일 바이트 배열로 저장하거나, 필요시 조각별 저장
         # 여기서는 전체 인코딩된 데이터를 하나의 청크로 저장
         self.storage.save_chunk(encoded, self.node_id, block.index)

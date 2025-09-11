@@ -6,7 +6,7 @@ class ErasureCode:
         self.n = n  # 총 조각 수 (데이터 + 패리티)
         self.rsc = RSCodec(n - k)
 
-    def encode(self, data: bytes, k: int = None, n: int = None):
+    def encode(self, data: bytes, k: int | None = None, n: int | None = None):
         k = k or self.k
         n = n or self.n
         return self.rsc.encode(data)

@@ -4,7 +4,8 @@ import threading
 import socket, requests
 from flask import Flask, request, jsonify, Response
 
-from blockchain import Blockchain, Transaction
+from blockchain.blockchain import Blockchain
+from blockchain.transaction import Transaction
 from storage import Storage, ErasureCode
 
 app = Flask(__name__)
@@ -83,7 +84,7 @@ def mine():
     blockchain.add_block(new_block)
     # 소거 코드 인코딩 후 저장
     data_bytes = json.dumps(new_block.to_dict()).encode()
-    encoded = erasure_code.encode(data_bytes)
+    encoded = bytes(erasure_code.encode(data_bytes))
     storage.save_chunk(encoded, LOCAL_IP, new_block.index)
     return jsonify({"message": "Block mined and stored", "block": new_block.to_dict()}), 200
 

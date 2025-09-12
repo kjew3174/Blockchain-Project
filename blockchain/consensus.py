@@ -1,4 +1,4 @@
-from block import Block
+from .block import Block
 from typing import Any
 
 def proof_of_work(block: Block, difficulty):

@@ -35,21 +35,24 @@ def broadcast_presence() -> None:
     message = json.dumps({"ip": LOCAL_IP, "port": LOCAL_PORT})
     while True:
         sock.sendto(message.encode(), ('<broadcast>', BROADCAST_PORT))
+        print(f"[DEBUG] Broadcasting {message}")
         time.sleep(BROADCAST_INTERVAL)
 
 def listen_for_nodes() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("", BROADCAST_PORT))
+    print(f"[DEBUG] Listening on UDP port {BROADCAST_PORT}")
     while True:
         try:
-            data, _ = sock.recvfrom(1024)
+            data, addr = sock.recvfrom(1024)
+            print(f"[DEBUG] Received raw packet from {addr}: {data}")
             payload = json.loads(data.decode())
             peer_ip = payload.get("ip")
-            peer_port = payload.get("port")
-            if peer_ip and peer_port and (peer_ip, peer_port) != (LOCAL_IP, LOCAL_PORT):
-                nodes.add((peer_ip, peer_port))
-        except:
+            if peer_ip and peer_ip != LOCAL_IP:
+                nodes.add(peer_ip)
+                print(f"[DEBUG] Added peer {peer_ip}, nodes = {nodes}")
+        except Exception as e:
+            print("[DEBUG] Error receiving broadcast:", e)
             continue
 
 # 백그라운드 스레드 시작

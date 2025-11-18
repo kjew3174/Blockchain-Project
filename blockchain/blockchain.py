@@ -53,19 +53,18 @@ class Blockchain:
         self.chain.append(block)
         self.store_block(block)
 
-    def store_block(self, block: Block, k: int | None = None, n: int | None = None) -> None:
+    def store_block(self, block: Block, k: int | None = None, n: int | None = None) -> list[bytes]:
         """
-        블록을 JSON으로 직렬화한 뒤 소거 코드로 인코딩하여 저장소에 분산 저장
+        블록을 JSON으로 직렬화한 뒤 소거 코드로 인코딩하여 n개의 청크로 분할
+        :return: n개의 청크 리스트
         """
         data_bytes = json.dumps(block.to_dict()).encode()
-        encoded = bytes(self.er.encode(data_bytes, k, n))
-        # 소거 코드 결과를 단일 바이트 배열로 저장하거나, 필요시 조각별 저장
-        # 여기서는 전체 인코딩된 데이터를 하나의 청크로 저장
-        self.storage.save_chunk(encoded, self.node_id, block.index)
+        chunks = self.er.encode(data_bytes, k, n)
+        return chunks
 
     def replace_chain(self, new_chain: list[dict]) -> None:
         """
-        체인을 교체하고, 저장된 블록 데이터도 갱신 필요
+        체인을 교체합니다. (청크 저장은 node.py에서 처리)
         """
         self.chain = []
         for block_data in new_chain:
@@ -78,7 +77,6 @@ class Blockchain:
             )
             block.hash = block_data['hash']
             self.chain.append(block)
-            self.store_block(block)
 
     def is_chain_valid(self) -> bool:
         for i in range(1, len(self.chain)):

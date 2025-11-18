@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>블록체인 노드 대시보드</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔗 블록체인 노드 대시보드</h1>
+            <div class="node-info">
+                <span class="badge">노드: {{ local_ip }}:{{ local_port }}</span>
+                <span class="badge" id="node-count">연결된 노드: 0</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- 노드 상태 섹션 -->
+            <section class="card">
+                <h2>🌐 네트워크 상태</h2>
+                <div class="status-grid">
+                    <div class="status-item">
+                        <label>로컬 노드:</label>
+                        <span class="value">{{ local_ip }}:{{ local_port }}</span>
+                    </div>
+                    <div class="status-item">
+                        <label>연결된 노드:</label>
+                        <span class="value" id="connected-nodes">0</span>
+                    </div>
+                    <div class="status-item">
+                        <label>체인 길이:</label>
+                        <span class="value" id="chain-length">0</span>
+                    </div>
+                    <div class="status-item">
+                        <label>대기 중인 트랜잭션:</label>
+                        <span class="value" id="pending-tx">0</span>
+                    </div>
+                </div>
+                <div class="node-list" id="node-list">
+                    <h3>연결된 노드 목록</h3>
+                    <ul id="nodes-ul"></ul>
+                </div>
+                <button class="btn btn-primary" onclick="syncAll()">🔄 전체 동기화</button>
+            </section>
+
+            <!-- 트랜잭션 섹션 -->
+            <section class="card">
+                <h2>💸 트랜잭션 추가</h2>
+                <form id="tx-form" onsubmit="addTransaction(event)">
+                    <div class="form-group">
+                        <label for="sender">보내는 주소:</label>
+                        <input type="text" id="sender" name="sender" required placeholder="예: Alice">
+                    </div>
+                    <div class="form-group">
+                        <label for="receiver">받는 주소:</label>
+                        <input type="text" id="receiver" name="receiver" required placeholder="예: Bob">
+                    </div>
+                    <div class="form-group">
+                        <label for="amount">금액:</label>
+                        <input type="number" id="amount" name="amount" step="0.01" min="0" required placeholder="0.00">
+                    </div>
+                    <button type="submit" class="btn btn-success">➕ 트랜잭션 추가</button>
+                </form>
+                <div id="tx-message" class="message"></div>
+            </section>
+
+            <!-- 블록 채굴 섹션 -->
+            <section class="card">
+                <h2>⛏️ 블록 채굴</h2>
+                <div class="mine-info">
+                    <p>대기 중인 트랜잭션: <strong id="pending-tx-count">0</strong>개</p>
+                </div>
+                <button class="btn btn-warning" onclick="mineBlock()" id="mine-btn">⛏️ 블록 채굴</button>
+                <div id="mine-message" class="message"></div>
+            </section>
+
+            <!-- 블록체인 정보 섹션 -->
+            <section class="card full-width">
+                <h2>📦 블록체인 정보</h2>
+                <div class="blockchain-controls">
+                    <button class="btn btn-info" onclick="refreshChain()">🔄 새로고침</button>
+                    <button class="btn btn-secondary" onclick="autoRefresh()" id="auto-refresh-btn">⏸️ 자동 새로고침 중지</button>
+                </div>
+                <div id="chain-container">
+                    <div class="loading">로딩 중...</div>
+                </div>
+            </section>
+
+            <!-- 청크 복구 섹션 -->
+            <section class="card">
+                <h2>🔧 청크 복구</h2>
+                <div class="form-group">
+                    <label for="recover-block-index">블록 인덱스:</label>
+                    <input type="number" id="recover-block-index" min="0" placeholder="복구할 블록 번호">
+                </div>
+                <button class="btn btn-danger" onclick="recoverBlock()">🔧 블록 복구</button>
+                <div id="recover-message" class="message"></div>
+            </section>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
+

@@ -1,6 +1,6 @@
 import requests
 
-from blockchain import Blockchain
+from blockchain.blockchain import Blockchain
 from storage import Storage, ErasureCode
 
 class Sync:

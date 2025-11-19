@@ -98,6 +98,27 @@
                 <button class="btn btn-danger" onclick="recoverBlock()">🔧 블록 복구</button>
                 <div id="recover-message" class="message"></div>
             </section>
+
+            <!-- 청크 기록 열람 섹션 -->
+            <section class="card full-width">
+                <h2>📋 청크 기록 열람</h2>
+                <div class="chunk-view-controls">
+                    <button class="btn btn-info" onclick="refreshChunkList()">🔄 청크 목록 새로고침</button>
+                    <button class="btn btn-secondary" onclick="viewBlockFromChunks()">👁️ 블록 기록 열람</button>
+                </div>
+                <div class="form-group">
+                    <label for="view-block-index">블록 인덱스:</label>
+                    <input type="number" id="view-block-index" min="0" placeholder="열람할 블록 번호">
+                </div>
+                <div id="chunk-list-container">
+                    <div class="loading">청크 목록을 불러오는 중...</div>
+                </div>
+                <div id="view-block-container" style="display: none;">
+                    <h3>열람된 블록 정보</h3>
+                    <div id="viewed-block-content"></div>
+                </div>
+                <div id="view-message" class="message"></div>
+            </section>
         </div>
     </div>
 

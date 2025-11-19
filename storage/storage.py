@@ -43,3 +43,63 @@ class Storage:
         """
         file_path = os.path.join(self.base_path, node_id, f"chunk_{block_index}_{chunk_id}.bin")
         return os.path.exists(file_path)
+    
+    def list_chunks(self, node_id: str = None) -> list[dict]:
+        """
+        저장된 청크 목록을 조회합니다.
+        :param node_id: 특정 노드 ID로 필터링 (None이면 모든 노드)
+        :return: 청크 정보 리스트 [{"node_id": str, "block_index": int, "chunk_id": int}, ...]
+        """
+        chunks = []
+        
+        if node_id:
+            # 특정 노드의 청크만 조회
+            node_folder = os.path.join(self.base_path, node_id)
+            if os.path.exists(node_folder):
+                for filename in os.listdir(node_folder):
+                    if filename.startswith("chunk_") and filename.endswith(".bin"):
+                        # chunk_{block_index}_{chunk_id}.bin 형식 파싱
+                        try:
+                            parts = filename.replace("chunk_", "").replace(".bin", "").split("_")
+                            block_index = int(parts[0])
+                            chunk_id = int(parts[1]) if len(parts) > 1 else 0
+                            chunks.append({
+                                "node_id": node_id,
+                                "block_index": block_index,
+                                "chunk_id": chunk_id
+                            })
+                        except (ValueError, IndexError):
+                            continue
+        else:
+            # 모든 노드의 청크 조회
+            if os.path.exists(self.base_path):
+                for node_folder_name in os.listdir(self.base_path):
+                    node_folder = os.path.join(self.base_path, node_folder_name)
+                    if os.path.isdir(node_folder):
+                        for filename in os.listdir(node_folder):
+                            if filename.startswith("chunk_") and filename.endswith(".bin"):
+                                try:
+                                    parts = filename.replace("chunk_", "").replace(".bin", "").split("_")
+                                    block_index = int(parts[0])
+                                    chunk_id = int(parts[1]) if len(parts) > 1 else 0
+                                    chunks.append({
+                                        "node_id": node_folder_name,
+                                        "block_index": block_index,
+                                        "chunk_id": chunk_id
+                                    })
+                                except (ValueError, IndexError):
+                                    continue
+        
+        # block_index, chunk_id 순으로 정렬
+        chunks.sort(key=lambda x: (x["block_index"], x["chunk_id"]))
+        return chunks
+    
+    def get_available_chunks_for_block(self, block_index: int, node_id: str = None) -> list[dict]:
+        """
+        특정 블록에 대한 사용 가능한 청크 목록을 조회합니다.
+        :param block_index: 블록 인덱스
+        :param node_id: 특정 노드 ID로 필터링 (None이면 모든 노드)
+        :return: 청크 정보 리스트
+        """
+        all_chunks = self.list_chunks(node_id)
+        return [chunk for chunk in all_chunks if chunk["block_index"] == block_index]

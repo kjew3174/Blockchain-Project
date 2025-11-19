@@ -6,6 +6,7 @@ let isAutoRefreshing = false;
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
     refreshAll();
+    refreshChunkList();
     setInterval(refreshStatus, 5000); // 5초마다 상태 업데이트
 });
 
@@ -105,7 +106,11 @@ async function addTransaction(event) {
             setTimeout(refreshStatus, 1000);
         } else {
             messageDiv.className = 'message error';
-            messageDiv.textContent = `❌ 오류: ${data.message || '트랜잭션 추가 실패'}`;
+            if (response.status === 403 && data.error === 'CHAIN_VALIDATION_FAILED') {
+                messageDiv.textContent = `🚫 거래가 차단되었습니다: ${data.message || '분산장부 불일치'}`;
+            } else {
+                messageDiv.textContent = `❌ 오류: ${data.message || '트랜잭션 추가 실패'}`;
+            }
         }
     } catch (error) {
         messageDiv.className = 'message error';
@@ -137,7 +142,11 @@ async function mineBlock() {
             }, 1000);
         } else {
             messageDiv.className = 'message error';
-            messageDiv.textContent = `❌ 오류: ${data.message || '블록 채굴 실패'}`;
+            if (response.status === 403 && data.error === 'CHAIN_VALIDATION_FAILED') {
+                messageDiv.textContent = `🚫 채굴이 차단되었습니다: ${data.message || '분산장부 불일치'}`;
+            } else {
+                messageDiv.textContent = `❌ 오류: ${data.message || '블록 채굴 실패'}`;
+            }
         }
     } catch (error) {
         messageDiv.className = 'message error';
@@ -306,4 +315,157 @@ function autoRefresh() {
         btn.className = 'btn btn-info';
     }
 }
+
+// 청크 목록 새로고침
+async function refreshChunkList() {
+    const container = document.getElementById('chunk-list-container');
+    container.innerHTML = '<div class="loading">청크 목록을 불러오는 중...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/chunks`);
+        const data = await response.json();
+        
+        if (response.ok && data.chunks) {
+            displayChunkList(data.chunks);
+        } else {
+            container.innerHTML = '<div class="empty">청크 목록을 가져올 수 없습니다</div>';
+        }
+    } catch (error) {
+        container.innerHTML = `<div class="empty">오류: ${error.message}</div>`;
+    }
+}
+
+// 청크 목록 표시
+function displayChunkList(chunks) {
+    const container = document.getElementById('chunk-list-container');
+    
+    if (chunks.length === 0) {
+        container.innerHTML = '<div class="empty">저장된 청크가 없습니다</div>';
+        return;
+    }
+    
+    // 블록별로 그룹화
+    const blocksMap = {};
+    chunks.forEach(chunk => {
+        const blockIndex = chunk.block_index;
+        if (!blocksMap[blockIndex]) {
+            blocksMap[blockIndex] = [];
+        }
+        blocksMap[blockIndex].push(chunk);
+    });
+    
+    container.innerHTML = '';
+    
+    // 블록별로 표시
+    Object.keys(blocksMap).sort((a, b) => parseInt(a) - parseInt(b)).forEach(blockIndex => {
+        const blockChunks = blocksMap[blockIndex];
+        const blockDiv = document.createElement('div');
+        blockDiv.className = 'block';
+        blockDiv.style.marginBottom = '15px';
+        
+        blockDiv.innerHTML = `
+            <div class="block-header">
+                <div class="block-index">블록 #${blockIndex}</div>
+                <div style="color: #666; font-size: 0.9em;">청크 ${blockChunks.length}개</div>
+            </div>
+            <div class="block-details">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 10px;">
+                    ${blockChunks.map(chunk => `
+                        <div style="padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 0.9em;">
+                            <strong>청크 #${chunk.chunk_id}</strong><br>
+                            <span style="color: #666;">노드: ${chunk.node_id}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(blockDiv);
+    });
+}
+
+// 청크 파일로부터 블록 기록 열람
+async function viewBlockFromChunks() {
+    const blockIndex = document.getElementById('view-block-index').value;
+    
+    if (!blockIndex) {
+        alert('블록 인덱스를 입력하세요.');
+        return;
+    }
+    
+    const messageDiv = document.getElementById('view-message');
+    const container = document.getElementById('view-block-container');
+    const contentDiv = document.getElementById('viewed-block-content');
+    
+    messageDiv.className = 'message info';
+    messageDiv.textContent = `👁️ 블록 ${blockIndex} 기록 열람 중...`;
+    messageDiv.style.display = 'block';
+    container.style.display = 'none';
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/view_block/${blockIndex}`);
+        const data = await response.json();
+        
+        if (response.ok && data.block) {
+            messageDiv.className = 'message success';
+            messageDiv.textContent = `✅ ${data.message || '블록 기록 열람 완료'} (수집된 청크: ${data.collected_chunks || 0})`;
+            
+            // 블록 정보 표시
+            const block = data.block;
+            const timestamp = new Date(block.timestamp * 1000).toLocaleString('ko-KR');
+            
+            contentDiv.innerHTML = `
+                <div class="block">
+                    <div class="block-header">
+                        <div class="block-index">블록 #${block.index}</div>
+                        <div class="block-hash">${block.hash}</div>
+                    </div>
+                    <div class="block-details">
+                        <div class="block-detail">
+                            <label>이전 해시:</label>
+                            <div class="value">${block.previous_hash}</div>
+                        </div>
+                        <div class="block-detail">
+                            <label>타임스탬프:</label>
+                            <div class="value">${timestamp}</div>
+                        </div>
+                        <div class="block-detail">
+                            <label>Nonce:</label>
+                            <div class="value">${block.nonce}</div>
+                        </div>
+                    </div>
+                    ${block.transactions && block.transactions.length > 0 ? `
+                        <div class="transactions">
+                            <h4>트랜잭션 (${block.transactions.length}개)</h4>
+                            ${block.transactions.map(tx => `
+                                <div class="transaction">
+                                    <div class="transaction-item">
+                                        <strong>보낸이:</strong> ${tx.sender || 'N/A'}
+                                    </div>
+                                    <div class="transaction-item">
+                                        <strong>받는이:</strong> ${tx.receiver || 'N/A'}
+                                    </div>
+                                    <div class="transaction-item">
+                                        <strong>금액:</strong> ${tx.amount || 0}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : '<div class="transactions"><p style="color: #999;">트랜잭션 없음</p></div>'}
+                </div>
+            `;
+            
+            container.style.display = 'block';
+        } else {
+            messageDiv.className = 'message error';
+            messageDiv.textContent = `❌ 열람 실패: ${data.message || '알 수 없는 오류'}`;
+            container.style.display = 'none';
+        }
+    } catch (error) {
+        messageDiv.className = 'message error';
+        messageDiv.textContent = `❌ 네트워크 오류: ${error.message}`;
+        container.style.display = 'none';
+    }
+}
+
 

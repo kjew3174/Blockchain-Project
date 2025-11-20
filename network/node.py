@@ -67,6 +67,29 @@ def find_available_port(start_port: int, max_attempts: int = 10) -> int:
     # 모든 포트가 사용 중이면 기본 포트 반환 (에러는 나중에 처리)
     return start_port
 
+def get_broadcast_address() -> str:
+    """
+    로컬 네트워크의 브로드캐스트 주소를 계산합니다.
+    """
+    try:
+        # 로컬 IP의 서브넷 마스크를 사용하여 브로드캐스트 주소 계산
+        import ipaddress
+        # 로컬 IP를 기반으로 네트워크 인터페이스 찾기
+        for interface in socket.if_nameindex() if hasattr(socket, 'if_nameindex') else []:
+            pass
+        
+        # 간단한 방법: 로컬 IP의 마지막 옥텟을 255로 변경
+        ip_parts = LOCAL_IP.split('.')
+        if len(ip_parts) == 4:
+            # 일반적인 서브넷 마스크 255.255.255.0 가정
+            broadcast_ip = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+            return broadcast_ip
+    except Exception as e:
+        print(f"[DEBUG] Failed to calculate broadcast address: {e}")
+    
+    # 기본값: 255.255.255.255
+    return '255.255.255.255'
+
 def broadcast_presence() -> None:
     global BROADCAST_PORT
     
@@ -85,11 +108,20 @@ def broadcast_presence() -> None:
         return
     
     message = json.dumps({"ip": LOCAL_IP, "port": LOCAL_PORT})
+    broadcast_addr = get_broadcast_address()
+    
+    print(f"[INFO] Starting broadcast on {broadcast_addr}:{BROADCAST_PORT}, local={LOCAL_IP}:{LOCAL_PORT}")
+    
     while True:
         try:
-            # 브로드캐스트 전송 (255.255.255.255 사용)
+            # 여러 브로드캐스트 주소로 전송 시도
+            # 1. 로컬 네트워크 브로드캐스트
+            sock.sendto(message.encode(), (broadcast_addr, BROADCAST_PORT))
+            # 2. 전체 네트워크 브로드캐스트
             sock.sendto(message.encode(), ('255.255.255.255', BROADCAST_PORT))
-            # print(f"[DEBUG] Broadcasting {message} on port {BROADCAST_PORT}")  # 너무 많은 로그 방지
+            # 디버깅을 위해 주기적으로 로그 출력 (매 10번째마다)
+            if int(time.time()) % (BROADCAST_INTERVAL * 10) < BROADCAST_INTERVAL:
+                print(f"[DEBUG] Broadcasting {message} to {broadcast_addr}:{BROADCAST_PORT} and 255.255.255.255:{BROADCAST_PORT}")
         except Exception as e:
             print(f"[WARN] Broadcast failed on port {BROADCAST_PORT}: {e}")
         time.sleep(BROADCAST_INTERVAL)
@@ -125,27 +157,38 @@ def listen_for_nodes() -> None:
             print(f"[ERROR] Failed to bind to port {BROADCAST_PORT}: {e}")
             return
     
+    print(f"[INFO] Node discovery listener started. Waiting for broadcasts on port {BROADCAST_PORT}...")
     while True:
         try:
             data, addr = sock.recvfrom(1024)
-            print(f"[DEBUG] Received raw packet from {addr}: {data}")
+            print(f"[DEBUG] Received packet from {addr[0]}:{addr[1]}, data: {data[:100]}...")
             payload = json.loads(data.decode())
             peer_ip = payload.get("ip")
             peer_port = payload.get("port")
-            if peer_ip and peer_ip != LOCAL_IP and peer_port:
-                # 노드 추가 및 업데이트
-                old_port = nodes.get(peer_ip)
-                nodes[peer_ip] = peer_port
-                if old_port != peer_port:
-                    print(f"[INFO] Added/Updated peer {peer_ip}:{peer_port}, nodes = {nodes}")
-                # 첫 번째 발견 시에도 로그 출력 (디버깅용)
-                elif old_port is None:
-                    print(f"[INFO] Discovered peer {peer_ip}:{peer_port}, nodes = {nodes}")
+            
+            if not peer_ip or not peer_port:
+                print(f"[DEBUG] Invalid payload: missing ip or port")
+                continue
+                
+            if peer_ip == LOCAL_IP:
+                print(f"[DEBUG] Ignoring own broadcast from {peer_ip}:{peer_port}")
+                continue
+                
+            # 노드 추가 및 업데이트
+            old_port = nodes.get(peer_ip)
+            nodes[peer_ip] = peer_port
+            if old_port != peer_port:
+                print(f"[INFO] Added/Updated peer {peer_ip}:{peer_port} (was {old_port}), current nodes = {nodes}")
+            # 첫 번째 발견 시에도 로그 출력 (디버깅용)
+            elif old_port is None:
+                print(f"[INFO] Discovered new peer {peer_ip}:{peer_port}, current nodes = {nodes}")
         except json.JSONDecodeError as e:
-            print(f"[DEBUG] Invalid JSON in broadcast packet: {e}")
+            print(f"[DEBUG] Invalid JSON in broadcast packet from {addr if 'addr' in locals() else 'unknown'}: {e}, data: {data[:100] if 'data' in locals() else 'N/A'}")
             continue
         except Exception as e:
             print(f"[DEBUG] Error receiving broadcast: {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
 # ─── 자동 동기화 및 알림 함수 ────────────────────────────────

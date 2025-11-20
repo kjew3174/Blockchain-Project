@@ -1,4 +1,5 @@
 import os
+import json
 
 class Storage:
     def __init__(self, base_path: str = "./chunks"):
@@ -103,3 +104,43 @@ class Storage:
         """
         all_chunks = self.list_chunks(node_id)
         return [chunk for chunk in all_chunks if chunk["block_index"] == block_index]
+    
+    def save_block_metadata(self, node_id: str, block_index: int, metadata: dict) -> None:
+        """
+        블록의 메타데이터(해시, 타임스탬프, nonce)를 저장합니다.
+        :param node_id: 노드 ID (IP 주소)
+        :param block_index: 블록 인덱스
+        :param metadata: 메타데이터 딕셔너리 {"hash": str, "timestamp": float, "nonce": int, "previous_hash": str}
+        """
+        node_folder = os.path.join(self.base_path, node_id)
+        os.makedirs(node_folder, exist_ok=True)
+        metadata_path = os.path.join(node_folder, f"metadata_{block_index}.json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+    
+    def get_block_metadata(self, node_id: str, block_index: int) -> dict | None:
+        """
+        블록의 메타데이터를 조회합니다.
+        :param node_id: 노드 ID (IP 주소)
+        :param block_index: 블록 인덱스
+        :return: 메타데이터 딕셔너리 또는 None
+        """
+        metadata_path = os.path.join(self.base_path, node_id, f"metadata_{block_index}.json")
+        if not os.path.exists(metadata_path):
+            return None
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[WARN] Failed to read metadata for block {block_index}: {e}")
+            return None
+    
+    def has_block_metadata(self, node_id: str, block_index: int) -> bool:
+        """
+        블록 메타데이터가 존재하는지 확인합니다.
+        :param node_id: 노드 ID (IP 주소)
+        :param block_index: 블록 인덱스
+        :return: 메타데이터 존재 여부
+        """
+        metadata_path = os.path.join(self.base_path, node_id, f"metadata_{block_index}.json")
+        return os.path.exists(metadata_path)

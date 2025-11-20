@@ -212,6 +212,17 @@ def auto_sync_chain() -> None:
                             
                             if is_valid:
                                 blockchain.replace_chain(r_chain)
+                                # 동기화된 블록들의 메타데이터 저장
+                                for block_data in r_chain:
+                                    block_index = block_data.get('index', -1)
+                                    if block_index > 0:  # Genesis 블록 제외
+                                        block_metadata = {
+                                            "hash": block_data.get('hash', ''),
+                                            "timestamp": block_data.get('timestamp', 0),
+                                            "nonce": block_data.get('nonce', 0),
+                                            "previous_hash": block_data.get('previous_hash', '')
+                                        }
+                                        storage.save_block_metadata(LOCAL_IP, block_index, block_metadata)
                                 print(f"[INFO] Auto-sync completed from {peer_ip}:{peer_port}")
                             else:
                                 print(f"[WARN] Rejected invalid chain from {peer_ip}:{peer_port} during auto-sync")
@@ -235,6 +246,95 @@ erasure_code = ErasureCode()
 
 # 로컬에서 채굴한 블록 인덱스 추적 (트랜잭션 표시용)
 local_mined_blocks = set()  # {block_index, ...}
+
+def restore_chain_from_chunks() -> None:
+    """
+    프로그램 시작 시 저장된 청크 파일에서 블록을 복구하여 체인에 추가합니다.
+    현재 IP의 청크만 복구합니다.
+    """
+    try:
+        # 현재 IP의 청크 목록 조회
+        chunks = storage.list_chunks(node_id=LOCAL_IP)
+        if not chunks:
+            print("[INFO] No chunks found to restore")
+            return
+        
+        # 블록 인덱스별로 그룹화
+        blocks_map = {}
+        for chunk in chunks:
+            block_index = chunk["block_index"]
+            if block_index == 0:
+                continue  # Genesis 블록은 건너뛰기
+            
+            if block_index not in blocks_map:
+                blocks_map[block_index] = []
+            blocks_map[block_index].append(chunk["chunk_id"])
+        
+        # 각 블록에 대해 k개 이상의 청크가 있는지 확인하고 복구
+        restored_count = 0
+        for block_index in sorted(blocks_map.keys()):
+            # 체인에 이미 있는 블록은 건너뛰기
+            if block_index < len(blockchain.chain):
+                continue
+            
+            chunk_ids = blocks_map[block_index]
+            if len(chunk_ids) >= erasure_code.k:
+                # k개 이상의 청크가 있으면 복구 시도
+                try:
+                    chunks_data = {}
+                    for chunk_id in chunk_ids[:erasure_code.k]:  # k개만 사용
+                        chunk_data = storage.retrieve_chunk(LOCAL_IP, block_index, chunk_id=chunk_id)
+                        chunks_data[chunk_id] = chunk_data
+                    
+                    # 청크를 리스트로 변환 (chunk_id 순서대로)
+                    chunk_list = [chunks_data[i] for i in sorted(chunks_data.keys())[:erasure_code.k]]
+                    
+                    # 소거 코드 디코딩하여 원본 데이터 복구
+                    recovered_data = erasure_code.decode(chunk_list)
+                    recovered_block_dict = json.loads(recovered_data.decode())
+                    
+                    # 블록 객체 생성
+                    from blockchain.block import Block
+                    recovered_block = Block(
+                        index=recovered_block_dict['index'],
+                        previous_hash=recovered_block_dict['previous_hash'],
+                        timestamp=recovered_block_dict['timestamp'],
+                        transactions=recovered_block_dict.get('transactions', []),
+                        nonce=recovered_block_dict.get('nonce', 0)
+                    )
+                    recovered_block.hash = recovered_block_dict['hash']
+                    
+                    # 체인에 추가 (유효성 검증 후)
+                    if len(blockchain.chain) == recovered_block.index:
+                        # 이전 블록의 해시가 일치하는지 확인
+                        if recovered_block.previous_hash == blockchain.chain[-1].hash:
+                            blockchain.chain.append(recovered_block)
+                            restored_count += 1
+                            print(f"[INFO] Restored block {block_index} from chunks")
+                        else:
+                            print(f"[WARN] Block {block_index} previous_hash mismatch, skipping")
+                    elif recovered_block.index < len(blockchain.chain):
+                        # 이미 체인에 있는 블록은 건너뛰기
+                        pass
+                    else:
+                        print(f"[WARN] Block {block_index} index mismatch (expected {len(blockchain.chain)}), skipping")
+                        
+                except Exception as e:
+                    print(f"[WARN] Failed to restore block {block_index} from chunks: {e}")
+                    continue
+        
+        if restored_count > 0:
+            print(f"[INFO] Restored {restored_count} blocks from chunks")
+        else:
+            print("[INFO] No blocks restored from chunks")
+            
+    except Exception as e:
+        print(f"[ERROR] Failed to restore chain from chunks: {e}")
+        import traceback
+        traceback.print_exc()
+
+# 프로그램 시작 시 저장된 청크에서 블록 복구
+restore_chain_from_chunks()
 
 # ─── 합의 및 검증 헬퍼 함수 ──────────────────────────────────
 
@@ -394,6 +494,15 @@ def mine():
     # 자신 포함하여 사용 가능한 노드 목록 생성
     available_nodes = [(LOCAL_IP, LOCAL_PORT)] + list(nodes.items())
     
+    # 블록 메타데이터 저장 (해시, 타임스탬프, nonce, previous_hash)
+    block_metadata = {
+        "hash": new_block.hash,
+        "timestamp": new_block.timestamp,
+        "nonce": new_block.nonce,
+        "previous_hash": new_block.previous_hash
+    }
+    storage.save_block_metadata(LOCAL_IP, new_block.index, block_metadata)
+    
     # 6개 청크를 각 노드에 1개씩 분산 저장
     distributed = 0
     for i, chunk in enumerate(chunks):
@@ -420,7 +529,7 @@ def mine():
                 except Exception as e:
                     print(f"[ERROR] Failed to store chunk {i} on {target_ip}:{target_port}: {e}")
     
-    # 다른 노드들에게 새 블록 알림 전송
+    # 다른 노드들에게 새 블록 알림 전송 (메타데이터 포함)
     block_dict = new_block.to_dict()
     notify_new_block(block_dict)
     
@@ -432,10 +541,42 @@ def mine():
 @app.route('/get_chain', methods=['GET'])
 def get_chain():
     chain_data = [block.to_dict() for block in blockchain.chain]
+    
+    # 현재 IP의 청크가 있는 블록 인덱스 확인 (체인에 없어도 표시하기 위해)
+    chunks = storage.list_chunks(node_id=LOCAL_IP)
+    chunk_block_indices = set()
+    for chunk in chunks:
+        if chunk["block_index"] > 0:  # Genesis 블록 제외
+            chunk_block_indices.add(chunk["block_index"])
+    
+    # 체인에 없는 블록 중 청크가 있는 블록의 메타데이터 조회 (복구 없이)
+    additional_blocks = []
+    for block_index in chunk_block_indices:
+        # 체인에 이미 있는 블록은 건너뛰기
+        if block_index < len(chain_data):
+            continue
+        
+        # 메타데이터 조회 (복구 없이)
+        metadata = storage.get_block_metadata(LOCAL_IP, block_index)
+        if metadata:
+            # 메타데이터가 있으면 블록 정보 생성 (트랜잭션은 숨김)
+            additional_blocks.append({
+                "index": block_index,
+                "previous_hash": metadata.get('previous_hash', ''),
+                "timestamp": metadata.get('timestamp', 0),
+                "transactions": [],  # 트랜잭션은 숨김
+                "nonce": metadata.get('nonce', 0),
+                "hash": metadata.get('hash', ''),
+                "from_chunks": True  # 청크에서 온 블록임을 표시 (복구되지 않음)
+            })
+    
+    # 체인 데이터와 추가 블록 합치기
+    all_blocks = chain_data + additional_blocks
+    
     # 로컬에서 채굴한 블록 인덱스 정보 추가
     return jsonify({
-        "length": len(chain_data), 
-        "chain": chain_data,
+        "length": len(chain_data),  # 실제 체인 길이
+        "chain": all_blocks,  # 체인 + 청크만 있는 블록
         "local_mined_blocks": list(local_mined_blocks)  # 로컬에서 채굴한 블록 인덱스 리스트
     }), 200
 
@@ -480,6 +621,7 @@ def notify_new_block_endpoint():
     """
     다른 노드로부터 새 블록 알림을 받습니다.
     알림을 받으면 자동으로 체인을 동기화합니다.
+    메타데이터도 함께 저장합니다.
     """
     try:
         data = request.get_json()
@@ -487,8 +629,25 @@ def notify_new_block_endpoint():
         if not block_data:
             return jsonify({"message": "No block data provided"}), 400
         
-        # 알림을 받은 블록이 로컬 체인보다 새로운지 확인
+        # 블록 메타데이터 저장 (다른 노드에서 채굴한 블록)
         block_index = block_data.get('index', -1)
+        if block_index > 0:  # Genesis 블록 제외
+            block_metadata = {
+                "hash": block_data.get('hash', ''),
+                "timestamp": block_data.get('timestamp', 0),
+                "nonce": block_data.get('nonce', 0),
+                "previous_hash": block_data.get('previous_hash', '')
+            }
+            # 알림을 보낸 노드의 IP 확인
+            sender_ip = request.remote_addr
+            if sender_ip and sender_ip.startswith('::ffff:'):
+                sender_ip = sender_ip[7:]  # IPv4-mapped IPv6 주소 처리
+            
+            # 메타데이터를 로컬에 저장 (sender_ip 대신 LOCAL_IP에 저장하여 현재 IP의 청크로 관리)
+            # 하지만 실제로는 sender_ip를 사용해야 할 수도 있음. 일단 LOCAL_IP에 저장
+            storage.save_block_metadata(LOCAL_IP, block_index, block_metadata)
+        
+        # 알림을 받은 블록이 로컬 체인보다 새로운지 확인
         if block_index > len(blockchain.chain) - 1:
             # 새 블록이 발견됨 - 체인 동기화 수행
             print(f"[INFO] Received new block notification: block #{block_index}")
@@ -536,6 +695,17 @@ def notify_new_block_endpoint():
                             
                             if is_valid:
                                 blockchain.replace_chain(r_chain)
+                                # 동기화된 블록들의 메타데이터 저장
+                                for b_data in r_chain:
+                                    b_index = b_data.get('index', -1)
+                                    if b_index > 0:  # Genesis 블록 제외
+                                        b_metadata = {
+                                            "hash": b_data.get('hash', ''),
+                                            "timestamp": b_data.get('timestamp', 0),
+                                            "nonce": b_data.get('nonce', 0),
+                                            "previous_hash": b_data.get('previous_hash', '')
+                                        }
+                                        storage.save_block_metadata(LOCAL_IP, b_index, b_metadata)
                                 print(f"[INFO] Chain synchronized from notification sender {sender_ip}:{sender_port} (new length: {len(r_chain)})")
                                 return jsonify({"message": "Notification received and chain synchronized"}), 200
                 except Exception as e:
@@ -625,6 +795,17 @@ def sync_all():
                 
                 if is_valid:
                     blockchain.replace_chain(r_chain)
+                    # 동기화된 블록들의 메타데이터 저장
+                    for block_data in r_chain:
+                        block_index = block_data.get('index', -1)
+                        if block_index > 0:  # Genesis 블록 제외
+                            block_metadata = {
+                                "hash": block_data.get('hash', ''),
+                                "timestamp": block_data.get('timestamp', 0),
+                                "nonce": block_data.get('nonce', 0),
+                                "previous_hash": block_data.get('previous_hash', '')
+                            }
+                            storage.save_block_metadata(LOCAL_IP, block_index, block_metadata)
                     synced = True
                     print(f"[INFO] Chain synchronized and validated from {peer_ip}:{peer_port}")
                 else:

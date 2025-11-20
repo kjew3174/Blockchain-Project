@@ -225,8 +225,11 @@ function displayChain(chain) {
         
         // 로컬에서 채굴한 블록인지 확인
         const isLocalMined = localMinedBlocks.has(block.index);
-        // 로컬에서 채굴한 블록은 트랜잭션 표시, 다른 노드에서 채굴한 블록은 숨김
-        const showTransactions = isLocalMined;
+        // 청크에서 복구한 블록인지 확인 (복구되지 않은 블록)
+        const isFromChunks = block.from_chunks === true;
+        // 로컬에서 채굴한 블록만 트랜잭션 표시
+        // 다른 노드에서 채굴한 블록(!isLocalMined)이나 청크만 있는 블록(isFromChunks)은 숨김
+        const showTransactions = isLocalMined && !isFromChunks;
         
         blockDiv.innerHTML = `
             <div class="block-header">

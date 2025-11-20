@@ -4,6 +4,7 @@ let autoRefreshInterval = null;
 let isAutoRefreshing = false;
 let lastChainLength = 0; // 이전 체인 길이 추적
 let localIP = null; // 로컬 IP 주소 (다른 노드 블록 구분용)
+let localMinedBlocks = new Set(); // 로컬에서 채굴한 블록 인덱스 세트
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
@@ -35,6 +36,11 @@ async function refreshStatus() {
         if (chainRes.ok) {
             const chainData = await chainRes.json();
             const currentChainLength = chainData.length || 0;
+            
+            // 로컬에서 채굴한 블록 인덱스 업데이트
+            if (chainData.local_mined_blocks) {
+                localMinedBlocks = new Set(chainData.local_mined_blocks);
+            }
             
             // 체인 길이가 변경되었으면 체인 내용도 새로고침
             if (currentChainLength !== lastChainLength) {
@@ -186,6 +192,10 @@ async function refreshChain() {
         
         if (response.ok && data.chain) {
             lastChainLength = data.chain.length; // 체인 길이 업데이트
+            // 로컬에서 채굴한 블록 인덱스 업데이트
+            if (data.local_mined_blocks) {
+                localMinedBlocks = new Set(data.local_mined_blocks);
+            }
             displayChain(data.chain);
         } else {
             container.innerHTML = '<div class="empty">체인 정보를 가져올 수 없습니다</div>';
@@ -213,23 +223,10 @@ function displayChain(chain) {
         
         const timestamp = new Date(block.timestamp * 1000).toLocaleString('ko-KR');
         
-        // 다른 노드에서 채굴한 블록인지 확인
-        // 체인 동기화 시 다른 노드의 블록도 트랜잭션 정보가 포함되지만,
-        // 사용자 요구사항: 다른 노드의 블록은 트랜잭션을 "트랜잭션 숨겨짐"으로 표시
-        // 
-        // 문제: 블록에 채굴자 정보가 없어서 로컬에서 채굴한 블록을 구분할 수 없음
-        // 해결책: 체인에 있는 모든 블록의 트랜잭션을 표시하되,
-        // 사용자가 요청한 대로 다른 노드의 블록은 트랜잭션을 숨김
-        // 
-        // 실제로는 체인 동기화 시 모든 블록의 트랜잭션이 포함되므로,
-        // 모든 블록의 트랜잭션을 표시하는 것이 맞지만,
-        // 사용자 요구사항에 따라 다른 노드의 블록은 트랜잭션을 숨김
-        //
-        // 간단한 방법: 모든 블록의 트랜잭션을 숨기고,
-        // 로컬에서 채굴한 블록만 트랜잭션을 표시
-        // 하지만 로컬에서 채굴한 블록을 구분할 방법이 없으므로,
-        // 모든 블록의 트랜잭션을 숨김 (사용자 요구사항)
-        const showTransactions = false;
+        // 로컬에서 채굴한 블록인지 확인
+        const isLocalMined = localMinedBlocks.has(block.index);
+        // 로컬에서 채굴한 블록은 트랜잭션 표시, 다른 노드에서 채굴한 블록은 숨김
+        const showTransactions = isLocalMined;
         
         blockDiv.innerHTML = `
             <div class="block-header">

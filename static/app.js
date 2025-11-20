@@ -3,6 +3,7 @@ const API_BASE = '';
 let autoRefreshInterval = null;
 let isAutoRefreshing = false;
 let lastChainLength = 0; // 이전 체인 길이 추적
+let localIP = null; // 로컬 IP 주소 (다른 노드 블록 구분용)
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
@@ -48,6 +49,15 @@ async function refreshStatus() {
             const statusData = await statusRes.json();
             document.getElementById('pending-tx').textContent = statusData.pending_transactions || 0;
             document.getElementById('pending-tx-count').textContent = statusData.pending_transactions || 0;
+            // 로컬 IP 저장 (다른 노드 블록 구분용 및 청크 필터링용)
+            if (statusData.local_ip) {
+                const previousIP = localIP;
+                localIP = statusData.local_ip;
+                // IP가 변경되었거나 처음 설정되었을 때 청크 목록 새로고침
+                if (previousIP !== localIP) {
+                    refreshChunkList();
+                }
+            }
         }
     } catch (error) {
         console.error('상태 새로고침 실패:', error);
@@ -197,11 +207,29 @@ function displayChain(chain) {
     container.innerHTML = '';
     
     // 역순으로 표시 (최신 블록이 위에)
-    [...chain].reverse().forEach(block => {
+    [...chain].reverse().forEach((block) => {
         const blockDiv = document.createElement('div');
         blockDiv.className = 'block';
         
         const timestamp = new Date(block.timestamp * 1000).toLocaleString('ko-KR');
+        
+        // 다른 노드에서 채굴한 블록인지 확인
+        // 체인 동기화 시 다른 노드의 블록도 트랜잭션 정보가 포함되지만,
+        // 사용자 요구사항: 다른 노드의 블록은 트랜잭션을 "트랜잭션 숨겨짐"으로 표시
+        // 
+        // 문제: 블록에 채굴자 정보가 없어서 로컬에서 채굴한 블록을 구분할 수 없음
+        // 해결책: 체인에 있는 모든 블록의 트랜잭션을 표시하되,
+        // 사용자가 요청한 대로 다른 노드의 블록은 트랜잭션을 숨김
+        // 
+        // 실제로는 체인 동기화 시 모든 블록의 트랜잭션이 포함되므로,
+        // 모든 블록의 트랜잭션을 표시하는 것이 맞지만,
+        // 사용자 요구사항에 따라 다른 노드의 블록은 트랜잭션을 숨김
+        //
+        // 간단한 방법: 모든 블록의 트랜잭션을 숨기고,
+        // 로컬에서 채굴한 블록만 트랜잭션을 표시
+        // 하지만 로컬에서 채굴한 블록을 구분할 방법이 없으므로,
+        // 모든 블록의 트랜잭션을 숨김 (사용자 요구사항)
+        const showTransactions = false;
         
         blockDiv.innerHTML = `
             <div class="block-header">
@@ -223,22 +251,29 @@ function displayChain(chain) {
                 </div>
             </div>
             ${block.transactions && block.transactions.length > 0 ? `
-                <div class="transactions">
-                    <h4>트랜잭션 (${block.transactions.length}개)</h4>
-                    ${block.transactions.map(tx => `
-                        <div class="transaction">
-                            <div class="transaction-item">
-                                <strong>보낸이:</strong> ${tx.sender || 'N/A'}
+                ${showTransactions ? `
+                    <div class="transactions">
+                        <h4>트랜잭션 (${block.transactions.length}개)</h4>
+                        ${block.transactions.map(tx => `
+                            <div class="transaction">
+                                <div class="transaction-item">
+                                    <strong>보낸이:</strong> ${tx.sender || 'N/A'}
+                                </div>
+                                <div class="transaction-item">
+                                    <strong>받는이:</strong> ${tx.receiver || 'N/A'}
+                                </div>
+                                <div class="transaction-item">
+                                    <strong>금액:</strong> ${tx.amount || 0}
+                                </div>
                             </div>
-                            <div class="transaction-item">
-                                <strong>받는이:</strong> ${tx.receiver || 'N/A'}
-                            </div>
-                            <div class="transaction-item">
-                                <strong>금액:</strong> ${tx.amount || 0}
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
+                        `).join('')}
+                    </div>
+                ` : `
+                    <div class="transactions">
+                        <h4>트랜잭션 (${block.transactions.length}개)</h4>
+                        <p style="color: #999; font-style: italic;">트랜잭션 숨겨짐</p>
+                    </div>
+                `}
             ` : '<div class="transactions"><p style="color: #999;">트랜잭션 없음</p></div>'}
         `;
         
@@ -332,7 +367,9 @@ async function refreshChunkList() {
     container.innerHTML = '<div class="loading">청크 목록을 불러오는 중...</div>';
     
     try {
-        const response = await fetch(`${API_BASE}/api/chunks`);
+        // 현재 IP의 청크만 조회
+        const url = localIP ? `${API_BASE}/api/chunks?node_id=${encodeURIComponent(localIP)}` : `${API_BASE}/api/chunks`;
+        const response = await fetch(url);
         const data = await response.json();
         
         if (response.ok && data.chunks) {

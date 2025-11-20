@@ -732,10 +732,14 @@ def api_list_chunks():
     """저장된 청크 목록 조회 API"""
     try:
         node_id = request.args.get('node_id', None)
+        # node_id가 지정되지 않으면 현재 IP의 청크만 반환
+        if node_id is None:
+            node_id = LOCAL_IP
         chunks = storage.list_chunks(node_id=node_id)
         return jsonify({
             "chunks": chunks,
-            "total": len(chunks)
+            "total": len(chunks),
+            "node_id": node_id  # 어떤 노드의 청크인지 반환
         }), 200
     except Exception as e:
         print(f"[ERROR] Failed to list chunks: {e}")

@@ -2,6 +2,7 @@ const API_BASE = '';
 
 let autoRefreshInterval = null;
 let isAutoRefreshing = false;
+let lastChainLength = 0; // 이전 체인 길이 추적
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', function() {
@@ -32,6 +33,14 @@ async function refreshStatus() {
 
         if (chainRes.ok) {
             const chainData = await chainRes.json();
+            const currentChainLength = chainData.length || 0;
+            
+            // 체인 길이가 변경되었으면 체인 내용도 새로고침
+            if (currentChainLength !== lastChainLength) {
+                lastChainLength = currentChainLength;
+                refreshChain(); // 체인 내용 새로고침
+            }
+            
             updateChainStatus(chainData);
         }
 
@@ -166,6 +175,7 @@ async function refreshChain() {
         const data = await response.json();
         
         if (response.ok && data.chain) {
+            lastChainLength = data.chain.length; // 체인 길이 업데이트
             displayChain(data.chain);
         } else {
             container.innerHTML = '<div class="empty">체인 정보를 가져올 수 없습니다</div>';

@@ -138,9 +138,84 @@ def listen_for_nodes() -> None:
             print("[DEBUG] Error receiving broadcast:", e)
             continue
 
+# ─── 자동 동기화 및 알림 함수 ────────────────────────────────
+
+def notify_new_block(block_data: dict) -> None:
+    """
+    다른 노드들에게 새 블록이 채굴되었음을 알립니다.
+    """
+    for peer_ip, peer_port in nodes.items():
+        try:
+            requests.post(
+                f"http://{peer_ip}:{peer_port}/notify_new_block",
+                json={"block": block_data},
+                timeout=5
+            )
+            print(f"[INFO] Notified {peer_ip}:{peer_port} about new block")
+        except Exception as e:
+            print(f"[WARN] Failed to notify {peer_ip}:{peer_port} about new block: {e}")
+
+def auto_sync_chain() -> None:
+    """
+    주기적으로 체인을 자동 동기화하는 백그라운드 스레드
+    """
+    while True:
+        try:
+            time.sleep(10)  # 10초마다 체인 확인
+            if not nodes:
+                continue  # 연결된 노드가 없으면 스킵
+            
+            # 각 노드의 체인 길이 확인
+            for peer_ip, peer_port in nodes.items():
+                try:
+                    r = requests.get(f"http://{peer_ip}:{peer_port}/get_chain", timeout=10)
+                    if r.status_code == 200:
+                        r_chain = r.json().get('chain', [])
+                        if len(r_chain) > len(blockchain.chain):
+                            # 더 긴 체인 발견 - 동기화 수행
+                            print(f"[INFO] Auto-syncing chain from {peer_ip}:{peer_port} (length: {len(r_chain)} vs {len(blockchain.chain)})")
+                            # 동기화 전에 원격 체인의 유효성 검증
+                            from blockchain.block import Block
+                            temp_chain = []
+                            for block_data in r_chain:
+                                block = Block(
+                                    index=block_data['index'],
+                                    previous_hash=block_data['previous_hash'],
+                                    timestamp=block_data['timestamp'],
+                                    transactions=block_data['transactions'],
+                                    nonce=block_data.get('nonce', 0)
+                                )
+                                block.hash = block_data['hash']
+                                temp_chain.append(block)
+                            
+                            # 임시 체인의 유효성 검증
+                            is_valid = True
+                            for i in range(1, len(temp_chain)):
+                                current = temp_chain[i]
+                                prev = temp_chain[i-1]
+                                if current.hash != current.calculate_hash():
+                                    is_valid = False
+                                    break
+                                if current.previous_hash != prev.hash:
+                                    is_valid = False
+                                    break
+                            
+                            if is_valid:
+                                blockchain.replace_chain(r_chain)
+                                print(f"[INFO] Auto-sync completed from {peer_ip}:{peer_port}")
+                            else:
+                                print(f"[WARN] Rejected invalid chain from {peer_ip}:{peer_port} during auto-sync")
+                except Exception as e:
+                    # 네트워크 오류는 무시 (일시적일 수 있음)
+                    continue
+        except Exception as e:
+            print(f"[ERROR] Auto-sync error: {e}")
+            time.sleep(5)  # 오류 발생 시 5초 대기 후 재시도
+
 # 백그라운드 스레드 시작
 threading.Thread(target=broadcast_presence, daemon=True).start()
 threading.Thread(target=listen_for_nodes, daemon=True).start()
+threading.Thread(target=auto_sync_chain, daemon=True).start()
 
 # ─── 블록체인·저장소 초기화 ─────────────────────────────────
 
@@ -153,6 +228,7 @@ erasure_code = ErasureCode()
 def check_chain_consensus() -> tuple[bool, str]:
     """
     다른 노드들과의 체인 일치 여부를 확인합니다.
+    더 긴 체인이 있으면 먼저 동기화를 시도합니다.
     :return: (일치 여부, 메시지)
     """
     if not nodes:
@@ -162,6 +238,59 @@ def check_chain_consensus() -> tuple[bool, str]:
     local_chain_length = len(blockchain.chain)
     local_chain_hash = blockchain.chain[-1].hash if blockchain.chain else ""
     
+    # 먼저 더 긴 체인이 있는지 확인하고 동기화 시도
+    longer_chain_found = False
+    for peer_ip, peer_port in nodes.items():
+        try:
+            r = requests.get(f"http://{peer_ip}:{peer_port}/get_chain", timeout=10)
+            if r.status_code == 200:
+                peer_data = r.json()
+                peer_chain = peer_data.get('chain', [])
+                peer_chain_length = len(peer_chain)
+                
+                # 더 긴 체인이 있으면 동기화 시도
+                if peer_chain_length > local_chain_length:
+                    longer_chain_found = True
+                    print(f"[INFO] Longer chain found at {peer_ip}:{peer_port} ({peer_chain_length} vs {local_chain_length}), attempting sync...")
+                    
+                    # 동기화 전에 원격 체인의 유효성 검증
+                    from blockchain.block import Block
+                    temp_chain = []
+                    for block_data in peer_chain:
+                        block = Block(
+                            index=block_data['index'],
+                            previous_hash=block_data['previous_hash'],
+                            timestamp=block_data['timestamp'],
+                            transactions=block_data['transactions'],
+                            nonce=block_data.get('nonce', 0)
+                        )
+                        block.hash = block_data['hash']
+                        temp_chain.append(block)
+                    
+                    # 임시 체인의 유효성 검증
+                    is_valid = True
+                    for i in range(1, len(temp_chain)):
+                        current = temp_chain[i]
+                        prev = temp_chain[i-1]
+                        if current.hash != current.calculate_hash():
+                            is_valid = False
+                            break
+                        if current.previous_hash != prev.hash:
+                            is_valid = False
+                            break
+                    
+                    if is_valid:
+                        blockchain.replace_chain(peer_chain)
+                        print(f"[INFO] Chain synchronized from {peer_ip}:{peer_port} during consensus check")
+                        # 동기화 후 다시 체인 길이와 해시 확인
+                        local_chain_length = len(blockchain.chain)
+                        local_chain_hash = blockchain.chain[-1].hash if blockchain.chain else ""
+                        break  # 동기화 완료, 다시 검증
+        except Exception as e:
+            print(f"[WARN] Failed to check chain from {peer_ip}:{peer_port}: {e}")
+            continue
+    
+    # 동기화 후 다시 일치 여부 확인
     mismatched_nodes = []
     for peer_ip, peer_port in nodes.items():
         try:
@@ -275,9 +404,13 @@ def mine():
                 except Exception as e:
                     print(f"[ERROR] Failed to store chunk {i} on {target_ip}:{target_port}: {e}")
     
+    # 다른 노드들에게 새 블록 알림 전송
+    block_dict = new_block.to_dict()
+    notify_new_block(block_dict)
+    
     return jsonify({
         "message": f"Block mined and distributed ({distributed}/{len(chunks)} chunks)",
-        "block": new_block.to_dict()
+        "block": block_dict
     }), 200
 
 @app.route('/get_chain', methods=['GET'])
@@ -320,6 +453,70 @@ def get_nodes():
     # 탐지된 노드를 "ip:port" 문자열로 반환
     node_list = [f"{ip}:{port}" for ip, port in nodes.items()]
     return jsonify({"nodes": node_list}), 200
+
+@app.route('/notify_new_block', methods=['POST'])
+def notify_new_block_endpoint():
+    """
+    다른 노드로부터 새 블록 알림을 받습니다.
+    알림을 받으면 자동으로 체인을 동기화합니다.
+    """
+    try:
+        data = request.get_json()
+        block_data = data.get('block')
+        if not block_data:
+            return jsonify({"message": "No block data provided"}), 400
+        
+        # 알림을 받은 블록이 로컬 체인보다 새로운지 확인
+        block_index = block_data.get('index', -1)
+        if block_index > len(blockchain.chain) - 1:
+            # 새 블록이 발견됨 - 체인 동기화 수행
+            print(f"[INFO] Received new block notification: block #{block_index}")
+            # 알림을 보낸 노드에서 전체 체인 가져오기
+            # 알림을 보낸 노드의 IP는 request.remote_addr에서 확인 불가 (프록시 등)
+            # 대신 모든 노드에서 체인을 확인하여 동기화
+            for peer_ip, peer_port in nodes.items():
+                try:
+                    r = requests.get(f"http://{peer_ip}:{peer_port}/get_chain", timeout=10)
+                    if r.status_code == 200:
+                        r_chain = r.json().get('chain', [])
+                        if len(r_chain) > len(blockchain.chain):
+                            # 동기화 전에 원격 체인의 유효성 검증
+                            from blockchain.block import Block
+                            temp_chain = []
+                            for b_data in r_chain:
+                                block = Block(
+                                    index=b_data['index'],
+                                    previous_hash=b_data['previous_hash'],
+                                    timestamp=b_data['timestamp'],
+                                    transactions=b_data['transactions'],
+                                    nonce=b_data.get('nonce', 0)
+                                )
+                                block.hash = b_data['hash']
+                                temp_chain.append(block)
+                            
+                            # 임시 체인의 유효성 검증
+                            is_valid = True
+                            for i in range(1, len(temp_chain)):
+                                current = temp_chain[i]
+                                prev = temp_chain[i-1]
+                                if current.hash != current.calculate_hash():
+                                    is_valid = False
+                                    break
+                                if current.previous_hash != prev.hash:
+                                    is_valid = False
+                                    break
+                            
+                            if is_valid:
+                                blockchain.replace_chain(r_chain)
+                                print(f"[INFO] Chain synchronized from notification (new length: {len(r_chain)})")
+                                break  # 동기화 완료
+                except Exception as e:
+                    continue  # 다음 노드 시도
+        
+        return jsonify({"message": "Notification received"}), 200
+    except Exception as e:
+        print(f"[ERROR] Failed to process new block notification: {e}")
+        return jsonify({"message": "Failed to process notification"}), 500
 
 @app.route('/sync_all', methods=['GET'])
 def sync_all():

@@ -6,7 +6,7 @@ from storage.storage import Storage
 import socket
 
 class Blockchain:
-    def __init__(self, k: int = 4, n: int = 6) -> None:
+    def __init__(self, k: int = 2, n: int = 3) -> None:
         """
         블록체인 생성자. 소거 코드 및 저장소 초기화
         :param k: 데이터 청크 수

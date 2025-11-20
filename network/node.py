@@ -834,14 +834,14 @@ def recover_block(block_index: int):
     available_nodes = [(LOCAL_IP, LOCAL_PORT)] + list(nodes.items())
     total_nodes = len(available_nodes)
     
-    if total_nodes < 4:
-        print(f"[WARN] Not enough nodes for recovery: {total_nodes} < 4")
+    if total_nodes < erasure_code.k:
+        print(f"[WARN] Not enough nodes for recovery: {total_nodes} < {erasure_code.k}")
         return jsonify({
-            "message": f"Insufficient nodes for recovery: {total_nodes} < 4",
+            "message": f"Insufficient nodes for recovery: {total_nodes} < {erasure_code.k}",
             "available_nodes": total_nodes
         }), 400
     
-    # n개 청크 수집 시도 (k=4개 이상이면 복구 가능)
+    # n개 청크 수집 시도 (k=2개 이상이면 복구 가능)
     chunks = {}
     collected_chunks = 0
     
@@ -1019,7 +1019,7 @@ def api_view_block(block_index: int):
     # 자신 포함하여 사용 가능한 노드 목록 생성
     available_nodes = [(LOCAL_IP, LOCAL_PORT)] + list(nodes.items())
     
-    # n개 청크 수집 시도 (k=4개 이상이면 복구 가능)
+    # n개 청크 수집 시도 (k=2개 이상이면 복구 가능)
     chunks = {}
     collected_chunks = 0
     

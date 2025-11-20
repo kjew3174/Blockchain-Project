@@ -2,7 +2,7 @@ from reedsolo import RSCodec
 import math
 
 class ErasureCode:
-    def __init__(self, k: int = 4, n: int = 6):
+    def __init__(self, k: int = 2, n: int = 3):
         self.k = k  # 데이터 조각 수
         self.n = n  # 총 조각 수 (데이터 + 패리티)
         self.rsc = RSCodec(n - k)

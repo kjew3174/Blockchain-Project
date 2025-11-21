@@ -325,12 +325,14 @@ def restore_chain_from_chunks() -> None:
                 # k개 이상의 청크가 있으면 복구 시도
                 try:
                     chunks_data = {}
-                    for chunk_id in chunk_ids[:erasure_code.k]:  # k개만 사용
+                    # 최대 n개 청크 수집 (chunk_id 순서대로)
+                    sorted_chunk_ids = sorted(chunk_ids)[:erasure_code.n]
+                    for chunk_id in sorted_chunk_ids:
                         chunk_data = storage.retrieve_chunk(LOCAL_IP, block_index, chunk_id=chunk_id)
                         chunks_data[chunk_id] = chunk_data
                     
-                    # 청크를 리스트로 변환 (chunk_id 순서대로)
-                    chunk_list = [chunks_data[i] for i in sorted(chunks_data.keys())[:erasure_code.k]]
+                    # 청크를 리스트로 변환 (chunk_id 순서대로, 최대 n개)
+                    chunk_list = [chunks_data[i] for i in sorted(chunks_data.keys())]
                     
                     # 소거 코드 디코딩하여 원본 데이터 복구
                     recovered_data = erasure_code.decode(chunk_list)
@@ -924,8 +926,12 @@ def recover_block(block_index: int):
             "required_chunks": erasure_code.k
         }), 400
     
-    # 청크를 리스트로 변환 (chunk_id 순서대로)
-    chunk_list = [chunks[i] for i in sorted(chunks.keys())[:erasure_code.k]]
+    # 청크를 리스트로 변환 (chunk_id 순서대로, 최대 n개)
+    # chunk_id 0부터 n-1까지 순서대로 정렬
+    sorted_chunk_ids = sorted(chunks.keys())
+    chunk_list = [chunks[i] for i in sorted_chunk_ids[:erasure_code.n]]
+    
+    print(f"[DEBUG] Decoding with {len(chunk_list)} chunks (chunk_ids: {sorted_chunk_ids[:erasure_code.n]})")
     
     try:
         # 소거 코드 디코딩하여 원본 데이터 복구
@@ -1103,8 +1109,12 @@ def api_view_block(block_index: int):
             "block_index": block_index
         }), 400
     
-    # 청크를 리스트로 변환 (chunk_id 순서대로)
-    chunk_list = [chunks[i] for i in sorted(chunks.keys())[:erasure_code.k]]
+    # 청크를 리스트로 변환 (chunk_id 순서대로, 최대 n개)
+    # chunk_id 0부터 n-1까지 순서대로 정렬
+    sorted_chunk_ids = sorted(chunks.keys())
+    chunk_list = [chunks[i] for i in sorted_chunk_ids[:erasure_code.n]]
+    
+    print(f"[DEBUG] Decoding with {len(chunk_list)} chunks (chunk_ids: {sorted_chunk_ids[:erasure_code.n]})")
     
     try:
         # 소거 코드 디코딩하여 원본 데이터 복구

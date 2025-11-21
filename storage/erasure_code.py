@@ -64,41 +64,25 @@ class ErasureCode:
             if len(chunk) != chunk_size:
                 raise ValueError(f"All chunks must have the same size. Expected {chunk_size}, got {len(chunk)}")
         
-        # 각 위치별로 디코딩
+        # k개 데이터 청크만 사용 (인덱스 0부터 k-1까지)
+        # encode에서 데이터를 k개 청크로 분할했으므로, decode에서는 k개 청크를 순서대로 합치면 됨
+        data_chunks = chunks[:self.k]
+        
+        # 각 청크를 순서대로 합치기
+        # chunk[0] + chunk[1] + ... + chunk[k-1] = 원본 데이터
         decoded_data = bytearray()
-        for pos in range(chunk_size):
-            # 각 청크의 해당 위치에서 바이트 수집
-            bytes_at_pos = []
-            for chunk in chunks:
-                if pos < len(chunk):
-                    bytes_at_pos.append(chunk[pos])
-            
-            # 최소 k개 바이트가 필요
-            if len(bytes_at_pos) < self.k:
-                raise ValueError(f"Need at least {self.k} bytes at position {pos}, got {len(bytes_at_pos)}")
-            
-            # k개 이상의 바이트가 있으면 디코딩 시도
-            # RSCodec는 k + (n-k) = n개 바이트를 기대하므로, n개 바이트를 준비
-            bytes_to_decode = bytes(bytes_at_pos[:self.n]) if len(bytes_at_pos) >= self.n else bytes(bytes_at_pos[:self.k])
-            
-            try:
-                # RSCodec.decode()는 인코딩된 전체 바이트 배열을 받아서 디코딩
-                # encode에서 k개 바이트를 인코딩하여 n개 바이트를 생성했으므로,
-                # decode에서는 n개 바이트가 필요함
-                if len(bytes_to_decode) < self.n:
-                    # n개 미만이면 패딩 추가 (손상된 경우)
-                    bytes_to_decode = bytes_to_decode + bytes([0] * (self.n - len(bytes_to_decode)))
-                
-                decoded = self.rsc.decode(bytes_to_decode)
-                # 디코딩 결과는 원본 k개 바이트
-                decoded_data.append(decoded[0] if len(decoded) > 0 else bytes_to_decode[0])
-            except Exception as e:
-                # 디코딩 실패 시 첫 번째 바이트 사용 (손상된 데이터)
-                print(f"[WARN] Failed to decode at position {pos}: {e}, using first byte")
-                decoded_data.append(bytes_to_decode[0] if len(bytes_to_decode) > 0 else 0)
+        for chunk in data_chunks:
+            decoded_data.extend(chunk)
         
         # 패딩 제거 (마지막의 0 바이트들)
+        # 원본 데이터 길이를 알 수 없으므로, 연속된 0 바이트를 제거
+        # 하지만 마지막 청크의 패딩만 제거해야 함
+        # 간단한 방법: 마지막부터 0 바이트를 제거하되, 너무 많이 제거하지 않도록 주의
+        original_length = len(decoded_data)
         while len(decoded_data) > 0 and decoded_data[-1] == 0:
             decoded_data.pop()
+            # 원본 데이터가 0으로 끝날 수 있으므로, 최대 chunk_size만큼만 제거
+            if original_length - len(decoded_data) >= chunk_size:
+                break
         
         return bytes(decoded_data)
